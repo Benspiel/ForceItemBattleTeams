@@ -1,0 +1,16 @@
+name: Force Item Battle Teams
+version: '${version}'
+
+main: ben.spiel.ForceItemBattleTeams
+api-version: '1.21.10'
+load: POSTWORLD
+
+commands:
+  fibstart:
+    description: Startet das Spiel
+    usage: /fibstart
+    permission: fib.start
+
+permissions:
+  fib.start:
+    default: op
