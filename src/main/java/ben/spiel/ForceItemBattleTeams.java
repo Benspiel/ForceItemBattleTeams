@@ -1,10 +1,10 @@
 package ben.spiel;
 
-import org.bukkit.plugin.java.JavaPlugin;
-
-import ben.spiel.command.CommandStart;
+import ben.spiel.command.BackpackCommand;
+import ben.spiel.command.FIBCommand;
 import ben.spiel.game.GameManager;
 import ben.spiel.listener.GameListener;
+import org.bukkit.plugin.java.JavaPlugin;
 
 public class ForceItemBattleTeams extends JavaPlugin {
 
@@ -12,12 +12,29 @@ public class ForceItemBattleTeams extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        gameManager = new GameManager();
 
-        getCommand("fibstart").setExecutor(new CommandStart(gameManager));
+        // 📁 Config erstellen (falls nicht vorhanden)
+        saveDefaultConfig();
 
-        getServer().getPluginManager().registerEvents(new GameListener(gameManager), this);
+        // 🧠 GameManager initialisieren
+        gameManager = new GameManager(this);
 
-        getLogger().info("Plugin gestartet!");
+        // ⌨️ FIB Command + TAB
+        FIBCommand fibCommand = new FIBCommand(gameManager, this);
+        getCommand("forceitembattle").setExecutor(fibCommand);
+        getCommand("forceitembattle").setTabCompleter(fibCommand);
+
+        // 🎒 Backpack (immer registrieren!)
+        getCommand("backpack").setExecutor(new BackpackCommand(this));
+
+        // 🎧 Events registrieren
+        getServer().getPluginManager().registerEvents(new GameListener(gameManager, this), this);
+
+        getLogger().info("ForceItemBattleTeams gestartet!");
+    }
+
+    @Override
+    public void onDisable() {
+        getLogger().info("ForceItemBattleTeams gestoppt!");
     }
 }

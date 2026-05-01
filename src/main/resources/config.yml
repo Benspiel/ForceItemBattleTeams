@@ -1,0 +1,20 @@
+challenge-seconds: 300
+
+enable-backpack: true
+
+blacklist:
+  - BEDROCK
+  - COMMAND_BLOCK
+  - BARRIER
+
+teams:
+  team1: []
+  team2: []
+  team3: []
+  team4: []
+  team5: []
+  team6: []
+  team7: []
+  team8: []
+
+team-lock: false
