@@ -1,11 +1,52 @@
+# =========================
+# ⏱ TIMER
+# =========================
+
+# Zeit pro Aufgabe (in Sekunden)
 challenge-seconds: 300
 
+
+# =========================
+# 🟥 SKIPS
+# =========================
+
+# Wie viele Skips ein Spieler bekommt
+max-skips: 3
+
+
+# =========================
+# 🎒 BACKPACK
+# =========================
+
+# Team Backpack aktivieren/deaktivieren
 enable-backpack: true
 
+
+# =========================
+# 🔒 TEAM SYSTEM
+# =========================
+
+# Verhindert Team-Wechsel während des Spiels
+team-lock: false
+
+
+# =========================
+# 🚫 ITEM BLACKLIST
+# =========================
+
+# Diese Items werden NICHT gewählt
 blacklist:
   - BEDROCK
-  - COMMAND_BLOCK
   - BARRIER
+  - COMMAND_BLOCK
+  - STRUCTURE_BLOCK
+  - JIGSAW
+  - SPAWNER
+
+
+# =========================
+# 👥 TEAMS (AUTOMATISCH)
+# =========================
 
 teams:
   team1: []
@@ -16,5 +57,3 @@ teams:
   team6: []
   team7: []
   team8: []
-
-team-lock: false

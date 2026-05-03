@@ -4,77 +4,118 @@ import ben.spiel.game.GameManager;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.*;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.List;
+import java.util.Arrays;
 
 public class SettingsMenu {
 
     private final JavaPlugin plugin;
     private final GameManager gameManager;
 
-    public SettingsMenu(JavaPlugin plugin, GameManager gameManager) {
+    public SettingsMenu(JavaPlugin plugin, GameManager gm) {
         this.plugin = plugin;
-        this.gameManager = gameManager;
+        this.gameManager = gm;
     }
 
     public void open(Player player) {
-        Inventory inv = Bukkit.createInventory(null, 27, "§8Settings");
 
-        int time = plugin.getConfig().getInt("challenge-seconds");
-        boolean backpack = plugin.getConfig().getBoolean("enable-backpack");
-        boolean teamLock = plugin.getConfig().getBoolean("team-lock");
+        Inventory inv = Bukkit.createInventory(null, 27, "§8Force Item Battle");
 
-        // ⏱ Timer
-        ItemStack timer = new ItemStack(Material.CLOCK);
-        ItemMeta tMeta = timer.getItemMeta();
-        tMeta.setDisplayName("§eTimer: §6" + formatTime(time));
-        tMeta.setLore(List.of(
-                "§7Left Click: §c-1m",
-                "§7Right Click: §a+1m",
-                "§7Shift Left: §c-5m",
-                "§7Shift Right: §a+5m"
+        // =========================
+        // GLAS DESIGN
+        // =========================
+        ItemStack glass = createItem(Material.GRAY_STAINED_GLASS_PANE, " ");
+        for (int i = 0; i < 27; i++) {
+            inv.setItem(i, glass);
+        }
+
+        // =========================
+        // ⏱ TIMER
+        // =========================
+        int seconds = plugin.getConfig().getInt("challenge-seconds");
+
+        inv.setItem(10, createItem(Material.CLOCK,
+                "§6Timer",
+                "§7Zeit: §e" + format(seconds),
+                "",
+                "§7Left: §c-1 Minute",
+                "§7Right: §a+1 Minute",
+                "§7Shift: §a±5 Minuten"
         ));
-        timer.setItemMeta(tMeta);
 
-        // 🎒 Backpack
-        ItemStack bp = new ItemStack(backpack ? Material.LIME_DYE : Material.GRAY_DYE);
-        ItemMeta bpMeta = bp.getItemMeta();
-        bpMeta.setDisplayName("§eBackpack: " + (backpack ? "§aAN" : "§cAUS"));
-        bp.setItemMeta(bpMeta);
+        // =========================
+        // 🟥 SKIPS
+        // =========================
+        int skips = plugin.getConfig().getInt("max-skips", 3);
 
-        // 🔒 Team Lock
-        ItemStack lock = new ItemStack(teamLock ? Material.REDSTONE_BLOCK : Material.EMERALD_BLOCK);
-        ItemMeta lMeta = lock.getItemMeta();
-        lMeta.setDisplayName("§eTeam Lock: " + (teamLock ? "§cAN" : "§aAUS"));
-        lock.setItemMeta(lMeta);
+        inv.setItem(11, createItem(Material.BARRIER,
+                "§cSkips",
+                "§7Max Skips: §e" + skips,
+                "",
+                "§7Left: §c-1",
+                "§7Right: §a+1"
+        ));
 
-        // ▶️ Start
-        ItemStack start = new ItemStack(Material.LIME_WOOL);
-        ItemMeta sMeta = start.getItemMeta();
-        sMeta.setDisplayName("§aSpiel starten");
-        start.setItemMeta(sMeta);
+        // =========================
+        // 🎒 BACKPACK
+        // =========================
+        boolean backpack = plugin.getConfig().getBoolean("enable-backpack");
 
-        // ⏹ Stop
-        ItemStack stop = new ItemStack(Material.RED_WOOL);
-        ItemMeta stMeta = stop.getItemMeta();
-        stMeta.setDisplayName("§cSpiel stoppen");
-        stop.setItemMeta(stMeta);
+        inv.setItem(12, createItem(
+                backpack ? Material.LIME_DYE : Material.GRAY_DYE,
+                "§aBackpack",
+                "§7Status: " + (backpack ? "§aAN" : "§cAUS")
+        ));
 
-        inv.setItem(10, timer);
-        inv.setItem(12, bp);
-        inv.setItem(14, lock);
-        inv.setItem(16, start);
-        inv.setItem(22, stop);
+        // =========================
+        // 🔒 TEAM LOCK
+        // =========================
+        boolean lock = plugin.getConfig().getBoolean("team-lock");
+
+        inv.setItem(13, createItem(
+                lock ? Material.REDSTONE_BLOCK : Material.EMERALD_BLOCK,
+                "§cTeam Lock",
+                "§7Status: " + (lock ? "§cGesperrt" : "§aOffen")
+        ));
+
+        // =========================
+        // ⚡ GAME CONTROL
+        // =========================
+
+        inv.setItem(21, createItem(Material.LIME_WOOL, "§aSpiel starten"));
+        inv.setItem(22, createItem(Material.RED_WOOL, "§cSpiel stoppen"));
+        inv.setItem(23, createItem(Material.BARRIER, "§cReset"));
 
         player.openInventory(inv);
     }
 
-    private String formatTime(int seconds) {
-        int m = seconds / 60;
-        int s = seconds % 60;
+    // =========================
+    // ITEM BUILDER
+    // =========================
+
+    private ItemStack createItem(Material mat, String name, String... lore) {
+
+        ItemStack item = new ItemStack(mat);
+        ItemMeta meta = item.getItemMeta();
+
+        meta.setDisplayName(name);
+        meta.setLore(Arrays.asList(lore));
+
+        item.setItemMeta(meta);
+        return item;
+    }
+
+    // =========================
+    // TIME FORMAT
+    // =========================
+
+    private String format(int sec) {
+        int m = sec / 60;
+        int s = sec % 60;
         return String.format("%02d:%02d", m, s);
     }
 }

@@ -3,6 +3,7 @@ package ben.spiel.listener;
 import ben.spiel.game.GameManager;
 import ben.spiel.gui.SettingsMenu;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -22,6 +23,8 @@ public class GameListener implements Listener {
 
     private final GameManager gameManager;
     private final JavaPlugin plugin;
+
+    private final String PREFIX = "§8[§eForce Item Battle§8] §7";
 
     public GameListener(GameManager gameManager, JavaPlugin plugin) {
         this.gameManager = gameManager;
@@ -45,7 +48,17 @@ public class GameListener implements Listener {
         // 🟥 SKIP
         if (event.getItem().getType() == Material.BARRIER) {
             event.setCancelled(true);
-            gameManager.useSkip(player);
+
+            boolean success = gameManager.getSkipManager().useSkip(player);
+
+            if (success) {
+                gameManager.getItemManager().sendSkipMessage();
+                gameManager.getItemManager().nextItem();
+                gameManager.updateBossBar();
+                gameManager.updateArmorStands();
+            } else {
+                player.sendMessage(PREFIX + "§cDu hast keine Skips mehr!");
+            }
             return;
         }
 
@@ -53,6 +66,31 @@ public class GameListener implements Listener {
         if (event.getItem().getType() == Material.COMMAND_BLOCK_MINECART) {
             event.setCancelled(true);
             openTeamMenu(player);
+        }
+    }
+
+    // =========================
+    // ITEM CHECK (Inventar)
+    // =========================
+
+    @EventHandler
+    public void onMoveCheck(PlayerMoveEvent event) {
+
+        if (!gameManager.isRunning() || gameManager.isStopped()) return;
+
+        Player player = event.getPlayer();
+
+        for (ItemStack item : player.getInventory().getContents()) {
+            if (item == null) continue;
+
+            if (item.getType() == gameManager.getItemManager().getCurrentItem()) {
+
+                gameManager.getItemManager().sendSuccessMessage(player.getName());
+                gameManager.getItemManager().nextItem();
+                gameManager.updateBossBar();
+                gameManager.updateArmorStands();
+                return;
+            }
         }
     }
 
@@ -111,22 +149,21 @@ public class GameListener implements Listener {
 
         Player player = (Player) event.getWhoClicked();
 
-        int slot = event.getSlot();
-        int team = slot + 1;
+        int team = event.getSlot() + 1;
 
-        gameManager.addToTeam(player, team);
+        gameManager.getTeamManager().addToTeam(player, team);
 
         player.closeInventory();
     }
 
     // =========================
-    // SETTINGS GUI
+    // SETTINGS GUI (NEU)
     // =========================
 
     @EventHandler
     public void onSettingsClick(InventoryClickEvent event) {
 
-        if (!event.getView().getTitle().equals("§8Settings")) return;
+        if (!event.getView().getTitle().equals("§8ForceItem Settings")) return;
 
         event.setCancelled(true);
 
@@ -134,19 +171,18 @@ public class GameListener implements Listener {
 
         Player player = (Player) event.getWhoClicked();
 
-        // ⏱ TIMER
-        if (event.getCurrentItem().getType() == Material.CLOCK) {
+        int slot = event.getSlot();
+
+        // =========================
+        // TIMER
+        // =========================
+        if (slot == 10) {
 
             int current = plugin.getConfig().getInt("challenge-seconds");
-            int change = 0;
 
-            boolean shift = event.isShiftClick();
+            int change = event.isShiftClick() ? 300 : 60;
 
-            switch (event.getClick()) {
-                case LEFT -> change = shift ? -300 : -60;
-                case RIGHT -> change = shift ? 300 : 60;
-                default -> {}
-            }
+            if (event.isLeftClick()) change *= -1;
 
             int newTime = Math.max(60, current + change);
 
@@ -156,41 +192,81 @@ public class GameListener implements Listener {
             new SettingsMenu(plugin, gameManager).open(player);
         }
 
-        // 🎒 BACKPACK
-        if (event.getCurrentItem().getType() == Material.LIME_DYE ||
-                event.getCurrentItem().getType() == Material.GRAY_DYE) {
+        // =========================
+        // SKIPS
+        // =========================
+        if (slot == 11) {
 
-            boolean current = plugin.getConfig().getBoolean("enable-backpack");
-            boolean newValue = !current;
+            int current = plugin.getConfig().getInt("max-skips", 3);
 
-            plugin.getConfig().set("enable-backpack", newValue);
+            if (event.isLeftClick()) current--;
+            if (event.isRightClick()) current++;
+
+            current = Math.max(0, current);
+
+            plugin.getConfig().set("max-skips", current);
             plugin.saveConfig();
 
             new SettingsMenu(plugin, gameManager).open(player);
         }
 
-        // 🔒 TEAM LOCK
-        if (event.getCurrentItem().getType() == Material.REDSTONE_BLOCK ||
-                event.getCurrentItem().getType() == Material.EMERALD_BLOCK) {
+        // =========================
+        // BACKPACK
+        // =========================
+        if (slot == 12) {
 
-            boolean current = plugin.getConfig().getBoolean("team-lock");
-            boolean newValue = !current;
-
-            plugin.getConfig().set("team-lock", newValue);
+            boolean val = plugin.getConfig().getBoolean("enable-backpack");
+            plugin.getConfig().set("enable-backpack", !val);
             plugin.saveConfig();
 
             new SettingsMenu(plugin, gameManager).open(player);
         }
 
-        // ▶ START
-        if (event.getCurrentItem().getType() == Material.LIME_WOOL) {
+        // =========================
+        // TEAM LOCK
+        // =========================
+        if (slot == 13) {
+
+            boolean val = plugin.getConfig().getBoolean("team-lock");
+            plugin.getConfig().set("team-lock", !val);
+            plugin.saveConfig();
+
+            new SettingsMenu(plugin, gameManager).open(player);
+        }
+
+        // =========================
+        // RANDOM ITEMS
+        // =========================
+        if (slot == 14) {
+
+            boolean val = plugin.getConfig().getBoolean("random-items", true);
+            plugin.getConfig().set("random-items", !val);
+            plugin.saveConfig();
+
+            new SettingsMenu(plugin, gameManager).open(player);
+        }
+
+        // =========================
+        // START
+        // =========================
+        if (slot == 21) {
             gameManager.startGame();
             player.closeInventory();
         }
 
-        // ⏹ STOP
-        if (event.getCurrentItem().getType() == Material.RED_WOOL) {
+        // =========================
+        // STOP
+        // =========================
+        if (slot == 22) {
             gameManager.stopGame();
+            player.closeInventory();
+        }
+
+        // =========================
+        // RESET
+        // =========================
+        if (slot == 23) {
+            gameManager.restartGame();
             player.closeInventory();
         }
     }
@@ -201,8 +277,13 @@ public class GameListener implements Listener {
 
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
-        if (!gameManager.isRunning()) return;
-        gameManager.addPlayerToBossBar(event.getPlayer());
+
+        if (gameManager.isRunning()) {
+            gameManager.getSkipManager().giveSkipItem(event.getPlayer());
+            gameManager.updateArmorStands();
+        } else {
+            gameManager.getTeamManager().giveSelector(event.getPlayer());
+        }
     }
 
     // =========================
