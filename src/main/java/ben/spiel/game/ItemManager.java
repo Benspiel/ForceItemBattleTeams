@@ -4,8 +4,11 @@ import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 
 public class ItemManager {
 
@@ -14,7 +17,7 @@ public class ItemManager {
 
     private Material currentItem;
 
-    private final String PREFIX = "§8[§bForceItem§8] §7";
+    private final String PREFIX = "§8[§eForceItem§8] §7";
 
     public ItemManager(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -27,22 +30,40 @@ public class ItemManager {
     public void nextItem() {
 
         Material[] materials = Material.values();
-        List<String> blacklist = plugin.getConfig().getStringList("blacklist");
+        Set<String> blacklist = new HashSet<>();
+        for (String item : plugin.getConfig().getStringList("blacklist")) {
+            blacklist.add(item.toUpperCase());
+        }
 
+        List<Material> candidates = new ArrayList<>();
+        for (Material material : materials) {
+            if (material.isItem() && !blacklist.contains(material.name())) {
+                candidates.add(material);
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            Bukkit.broadcastMessage(PREFIX + "§cKeine gültigen Items gefunden. Prüfe die Blacklist!");
+            currentItem = null;
+            return;
+        }
+
+        Material nextItem;
         do {
-            currentItem = materials[random.nextInt(materials.length)];
-        } while (!currentItem.isItem() || blacklist.contains(currentItem.name()));
+            nextItem = candidates.get(random.nextInt(candidates.size()));
+        } while (candidates.size() > 1 && nextItem == currentItem);
 
-        // 📢 Nachricht (clean)
+        currentItem = nextItem;
+
         Bukkit.broadcastMessage(PREFIX + "Nächste Aufgabe: §6§l" + getNiceName());
     }
 
     // =========================
-    // SKIP MESSAGE
+    // SKIP MESSAGE (NEU)
     // =========================
 
-    public void sendSkipMessage() {
-        Bukkit.broadcastMessage(PREFIX + "§eAufgabe übersprungen!");
+    public void sendSkipUsed() {
+        Bukkit.broadcastMessage(PREFIX + "§eSkip benutzt!");
     }
 
     // =========================
@@ -54,14 +75,13 @@ public class ItemManager {
     }
 
     // =========================
-    // DEUTSCHER NAME (CLIENT SIDE)
+    // NAME FORMAT
     // =========================
 
     public String getNiceName() {
 
         if (currentItem == null) return "-";
 
-        // fallback (falls translation nicht genutzt wird)
         String name = currentItem.name().toLowerCase().replace("_", " ");
         return name.substring(0, 1).toUpperCase() + name.substring(1);
     }

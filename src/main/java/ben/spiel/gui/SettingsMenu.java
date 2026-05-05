@@ -40,7 +40,7 @@ public class SettingsMenu {
 
         inv.setItem(10, createItem(Material.CLOCK,
                 "§6Timer",
-                "§7Zeit: §e" + format(seconds),
+                "§7Gesamtzeit: §e" + format(seconds),
                 "",
                 "§7Left: §c-1 Minute",
                 "§7Right: §a+1 Minute",

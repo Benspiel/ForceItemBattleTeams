@@ -2,7 +2,7 @@
 # ⏱ TIMER
 # =========================
 
-# Zeit pro Aufgabe (in Sekunden)
+# Gesamtzeit für das Spiel (in Sekunden)
 challenge-seconds: 300
 
 

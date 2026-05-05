@@ -3,37 +3,38 @@ package ben.spiel.listener;
 import ben.spiel.game.GameManager;
 import ben.spiel.gui.SettingsMenu;
 import org.bukkit.Bukkit;
-import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.player.*;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
 
 public class GameListener implements Listener {
 
+    private static final String PREFIX = "§8[§eForceItem§8] §7";
+
     private final GameManager gameManager;
     private final JavaPlugin plugin;
-
-    private final String PREFIX = "§8[§eForce Item Battle§8] §7";
 
     public GameListener(GameManager gameManager, JavaPlugin plugin) {
         this.gameManager = gameManager;
         this.plugin = plugin;
     }
-
-    // =========================
-    // INTERACT (Skip + Team Selector)
-    // =========================
 
     @EventHandler
     public void onUse(PlayerInteractEvent event) {
@@ -45,94 +46,90 @@ public class GameListener implements Listener {
 
         Player player = event.getPlayer();
 
-        // 🟥 SKIP
         if (event.getItem().getType() == Material.BARRIER) {
             event.setCancelled(true);
 
             boolean success = gameManager.getSkipManager().useSkip(player);
 
             if (success) {
-                gameManager.getItemManager().sendSkipMessage();
-                gameManager.getItemManager().nextItem();
-                gameManager.updateBossBar();
-                gameManager.updateArmorStands();
+                gameManager.skipChallenge(player);
             } else {
                 player.sendMessage(PREFIX + "§cDu hast keine Skips mehr!");
             }
             return;
         }
 
-        // 🚂 TEAM SELECTOR
         if (event.getItem().getType() == Material.COMMAND_BLOCK_MINECART) {
             event.setCancelled(true);
+
+            if (plugin.getConfig().getBoolean("team-lock", false)) {
+                player.sendMessage(PREFIX + "§cTeam-Wechsel sind gesperrt!");
+                return;
+            }
+
             openTeamMenu(player);
         }
     }
-
-    // =========================
-    // ITEM CHECK (Inventar)
-    // =========================
 
     @EventHandler
     public void onMoveCheck(PlayerMoveEvent event) {
 
         if (!gameManager.isRunning() || gameManager.isStopped()) return;
+        if (event.getTo() == null) return;
+        if (event.getFrom().getBlockX() == event.getTo().getBlockX()
+                && event.getFrom().getBlockY() == event.getTo().getBlockY()
+                && event.getFrom().getBlockZ() == event.getTo().getBlockZ()) {
+            return;
+        }
 
-        Player player = event.getPlayer();
+        checkInventory(event.getPlayer());
+    }
 
-        for (ItemStack item : player.getInventory().getContents()) {
-            if (item == null) continue;
+    @EventHandler
+    public void onPickup(EntityPickupItemEvent event) {
 
-            if (item.getType() == gameManager.getItemManager().getCurrentItem()) {
+        if (!gameManager.isRunning() || gameManager.isStopped()) return;
+        if (!(event.getEntity() instanceof Player player)) return;
 
-                gameManager.getItemManager().sendSuccessMessage(player.getName());
-                gameManager.getItemManager().nextItem();
-                gameManager.updateBossBar();
-                gameManager.updateArmorStands();
-                return;
-            }
+        ItemStack pickedUp = event.getItem().getItemStack();
+        if (pickedUp.getType() == gameManager.getItemManager().getCurrentItem()) {
+            Bukkit.getScheduler().runTask(plugin, () -> checkInventory(player));
         }
     }
 
-    // =========================
-    // TEAM GUI
-    // =========================
+    private void checkInventory(Player player) {
+        gameManager.checkPlayerInventory(player);
+    }
 
     private void openTeamMenu(Player player) {
 
         Inventory inv = Bukkit.createInventory(null, 9, "§8Teams");
 
-        Material[] beds = {
-                Material.WHITE_BED,
-                Material.ORANGE_BED,
-                Material.MAGENTA_BED,
-                Material.LIGHT_BLUE_BED,
-                Material.YELLOW_BED,
-                Material.LIME_BED,
-                Material.PINK_BED,
-                Material.RED_BED
-        };
-
         for (int i = 1; i <= 8; i++) {
 
-            ItemStack bed = new ItemStack(beds[i - 1]);
-            ItemMeta meta = bed.getItemMeta();
+            ItemStack teamItem = new ItemStack(gameManager.getTeamManager().getTeamWool(i));
+            ItemMeta meta = teamItem.getItemMeta();
 
-            meta.setDisplayName("§eTeam " + i);
+            meta.setDisplayName(gameManager.getTeamManager().getTeamTag(i) + " §eTeam " + i);
 
             List<String> lore = new ArrayList<>();
-
             List<String> players = plugin.getConfig().getStringList("teams.team" + i);
 
             for (String uuid : players) {
-                Player p = Bukkit.getPlayer(UUID.fromString(uuid));
-                if (p != null) lore.add("§7- " + p.getName());
+                Player p;
+                try {
+                    p = Bukkit.getPlayer(UUID.fromString(uuid));
+                } catch (IllegalArgumentException ignored) {
+                    continue;
+                }
+
+                if (p != null) lore.add("§7- " + gameManager.getTeamManager().formatPlayerName(p));
             }
 
             meta.setLore(lore);
-            bed.setItemMeta(meta);
+            teamItem.setItemMeta(meta);
 
-            inv.setItem(i - 1, bed);
+            inv.setItem(i - 1, teamItem);
         }
 
         player.openInventory(inv);
@@ -147,41 +144,44 @@ public class GameListener implements Listener {
 
         if (event.getCurrentItem() == null) return;
 
+        int slot = event.getRawSlot();
+        if (slot < 0 || slot >= 9) return;
+
         Player player = (Player) event.getWhoClicked();
 
-        int team = event.getSlot() + 1;
+        if (plugin.getConfig().getBoolean("team-lock", false)) {
+            player.sendMessage(PREFIX + "§cTeam-Wechsel sind gesperrt!");
+            player.closeInventory();
+            return;
+        }
+
+        int team = slot + 1;
 
         gameManager.getTeamManager().addToTeam(player, team);
 
         player.closeInventory();
     }
 
-    // =========================
-    // SETTINGS GUI (NEU)
-    // =========================
-
     @EventHandler
     public void onSettingsClick(InventoryClickEvent event) {
 
-        if (!event.getView().getTitle().equals("§8ForceItem Settings")) return;
+        if (!(event.getWhoClicked() instanceof Player player)) return;
+
+        if (!event.getView().getTitle().equals("§8Force Item Battle")) return;
 
         event.setCancelled(true);
 
         if (event.getCurrentItem() == null) return;
+        if (event.getCurrentItem().getType().isAir()) return;
 
-        Player player = (Player) event.getWhoClicked();
+        int slot = event.getRawSlot();
 
-        int slot = event.getSlot();
+        if (slot >= event.getView().getTopInventory().getSize()) return;
 
-        // =========================
-        // TIMER
-        // =========================
         if (slot == 10) {
-
-            int current = plugin.getConfig().getInt("challenge-seconds");
+            int current = plugin.getConfig().getInt("challenge-seconds", 300);
 
             int change = event.isShiftClick() ? 300 : 60;
-
             if (event.isLeftClick()) change *= -1;
 
             int newTime = Math.max(60, current + change);
@@ -190,13 +190,10 @@ public class GameListener implements Listener {
             plugin.saveConfig();
 
             new SettingsMenu(plugin, gameManager).open(player);
+            return;
         }
 
-        // =========================
-        // SKIPS
-        // =========================
         if (slot == 11) {
-
             int current = plugin.getConfig().getInt("max-skips", 3);
 
             if (event.isLeftClick()) current--;
@@ -208,77 +205,55 @@ public class GameListener implements Listener {
             plugin.saveConfig();
 
             new SettingsMenu(plugin, gameManager).open(player);
+            return;
         }
 
-        // =========================
-        // BACKPACK
-        // =========================
         if (slot == 12) {
+            boolean val = plugin.getConfig().getBoolean("enable-backpack", true);
 
-            boolean val = plugin.getConfig().getBoolean("enable-backpack");
             plugin.getConfig().set("enable-backpack", !val);
             plugin.saveConfig();
 
             new SettingsMenu(plugin, gameManager).open(player);
+            return;
         }
 
-        // =========================
-        // TEAM LOCK
-        // =========================
         if (slot == 13) {
+            boolean val = plugin.getConfig().getBoolean("team-lock", false);
 
-            boolean val = plugin.getConfig().getBoolean("team-lock");
             plugin.getConfig().set("team-lock", !val);
             plugin.saveConfig();
 
             new SettingsMenu(plugin, gameManager).open(player);
+            return;
         }
 
-        // =========================
-        // RANDOM ITEMS
-        // =========================
-        if (slot == 14) {
-
-            boolean val = plugin.getConfig().getBoolean("random-items", true);
-            plugin.getConfig().set("random-items", !val);
-            plugin.saveConfig();
-
-            new SettingsMenu(plugin, gameManager).open(player);
-        }
-
-        // =========================
-        // START
-        // =========================
         if (slot == 21) {
             gameManager.startGame();
             player.closeInventory();
+            return;
         }
 
-        // =========================
-        // STOP
-        // =========================
         if (slot == 22) {
             gameManager.stopGame();
             player.closeInventory();
+            return;
         }
 
-        // =========================
-        // RESET
-        // =========================
         if (slot == 23) {
             gameManager.restartGame();
             player.closeInventory();
         }
     }
 
-    // =========================
-    // JOIN
-    // =========================
-
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
 
         if (gameManager.isRunning()) {
+            if (gameManager.getTeamManager().getTeam(event.getPlayer()) == -1) {
+                gameManager.getTeamManager().addToTeam(event.getPlayer(), 1);
+            }
+
             gameManager.getSkipManager().giveSkipItem(event.getPlayer());
             gameManager.updateArmorStands();
         } else {
@@ -286,9 +261,10 @@ public class GameListener implements Listener {
         }
     }
 
-    // =========================
-    // BLOCK BREAK LOCK
-    // =========================
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        gameManager.removeDisplay(event.getPlayer());
+    }
 
     @EventHandler
     public void onBreak(BlockBreakEvent event) {

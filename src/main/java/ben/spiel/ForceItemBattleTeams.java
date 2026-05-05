@@ -1,9 +1,9 @@
 package ben.spiel;
 
-import ben.spiel.command.BackpackCommand;
 import ben.spiel.command.FIBCommand;
 import ben.spiel.game.GameManager;
 import ben.spiel.listener.GameListener;
+import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public class ForceItemBattleTeams extends JavaPlugin {
@@ -13,28 +13,50 @@ public class ForceItemBattleTeams extends JavaPlugin {
     @Override
     public void onEnable() {
 
-        // 📁 Config erstellen (falls nicht vorhanden)
+        // Config laden
         saveDefaultConfig();
 
-        // 🧠 GameManager initialisieren
-        gameManager = new GameManager(this);
+        // GameManager erstellen
+        this.gameManager = new GameManager(this);
 
-        // ⌨️ FIB Command + TAB
-        FIBCommand fibCommand = new FIBCommand(gameManager, this);
-        getCommand("forceitembattle").setExecutor(fibCommand);
-        getCommand("forceitembattle").setTabCompleter(fibCommand);
+        // Listener registrieren
+        getServer().getPluginManager().registerEvents(
+                new GameListener(gameManager, this),
+                this
+        );
 
-        // 🎒 Backpack (immer registrieren!)
-        getCommand("backpack").setExecutor(new BackpackCommand(this));
+        // Command registrieren (FIXED!)
+        FIBCommand cmd = new FIBCommand(gameManager);
 
-        // 🎧 Events registrieren
-        getServer().getPluginManager().registerEvents(new GameListener(gameManager, this), this);
+        registerCommand("forceitembattle", cmd);
+        registerCommand("backpack", cmd);
 
-        getLogger().info("ForceItemBattleTeams gestartet!");
+        getLogger().info("ForceItemBattle gestartet!");
     }
 
     @Override
     public void onDisable() {
-        getLogger().info("ForceItemBattleTeams gestoppt!");
+        if (gameManager != null) {
+            gameManager.shutdown();
+        }
+
+        getLogger().info("ForceItemBattle gestoppt!");
+    }
+
+    private void registerCommand(String name, FIBCommand command) {
+        PluginCommand pluginCommand = getCommand(name);
+
+        if (pluginCommand == null) {
+            getLogger().warning("Command '" + name + "' fehlt in plugin.yml.");
+            return;
+        }
+
+        pluginCommand.setExecutor(command);
+        pluginCommand.setTabCompleter(command);
+    }
+
+    // Getter
+    public GameManager getGameManager() {
+        return gameManager;
     }
 }

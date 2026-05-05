@@ -1,72 +1,87 @@
 package ben.spiel.game;
 
-import net.kyori.adventure.text.Component;
-import org.bukkit.Bukkit;
-import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 
 public class GameTimer {
 
     private final GameManager gameManager;
 
-    private int timeLeft;
+    private int remainingTime;
+    private int elapsedTime;
+    private BukkitRunnable task;
 
     public GameTimer(GameManager gameManager) {
         this.gameManager = gameManager;
-
-        // Startwert aus Config
-        this.timeLeft = gameManager.getPlugin().getConfig().getInt("challenge-seconds");
     }
+
+    // =========================
+    // START
+    // =========================
 
     public void start() {
 
-        // Timer neu setzen beim Start
-        this.timeLeft = gameManager.getPlugin().getConfig().getInt("challenge-seconds");
+        // Zeit aus config laden
+        reset();
 
-        new BukkitRunnable() {
+        // Falls schon ein Timer läuft → stoppen
+        if (task != null) {
+            task.cancel();
+        }
+
+        task = new BukkitRunnable() {
             @Override
             public void run() {
 
+                // Game gestoppt → abbrechen
                 if (!gameManager.isRunning() || gameManager.isStopped()) {
                     cancel();
                     return;
                 }
 
-                if (timeLeft <= 0) {
-                    gameManager.stopGame();
+                // runterzählen
+                remainingTime--;
+                elapsedTime++;
+
+                // Zeit abgelaufen
+                if (remainingTime <= 0) {
+                    remainingTime = 0;
+                    task = null;
                     cancel();
-                    return;
+                    gameManager.finishByTime();
                 }
-
-                // 📊 ActionBar
-                for (Player p : Bukkit.getOnlinePlayers()) {
-                    p.sendActionBar(Component.text("§eZeit: §6" + format(timeLeft)));
-                }
-
-                // 📊 BossBar Fortschritt
-                if (gameManager.getBossBar() != null) {
-                    int total = gameManager.getPlugin().getConfig().getInt("challenge-seconds");
-                    double progress = (double) timeLeft / total;
-
-                    gameManager.getBossBar().setProgress(progress);
-                }
-
-                timeLeft--;
             }
-        }.runTaskTimer(gameManager.getPlugin(), 0, 20);
+        };
+
+        // jede Sekunde
+        task.runTaskTimer(gameManager.getPlugin(), 20L, 20L);
     }
+
+    // =========================
+    // STOP (optional sauber)
+    // =========================
 
     public void stop() {
-        // wird automatisch durch cancel() beendet
+        if (task != null) {
+            task.cancel();
+            task = null;
+        }
     }
 
-    private String format(int sec) {
-        int m = sec / 60;
-        int s = sec % 60;
-        return String.format("%02d:%02d", m, s);
+    public void reset() {
+        remainingTime = Math.max(60, gameManager.getPlugin()
+                .getConfig().getInt("challenge-seconds", 300));
+        elapsedTime = 0;
     }
 
-    public int getTimeLeft() {
-        return timeLeft;
+    // =========================
+    // GETTER
+    // =========================
+
+    public int getRemainingTime() {
+        return remainingTime;
+    }
+
+    public int getElapsedTime() {
+        return elapsedTime;
     }
 }

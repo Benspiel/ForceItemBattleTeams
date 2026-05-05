@@ -1,13 +1,16 @@
 package ben.spiel.game;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
-import org.bukkit.boss.*;
+import org.bukkit.Material;
 import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.HashMap;
@@ -15,78 +18,173 @@ import java.util.UUID;
 
 public class GameManager {
 
+    private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.legacySection();
+
     private final JavaPlugin plugin;
 
     private final GameTimer timer;
     private final ItemManager itemManager;
     private final SkipManager skipManager;
     private final TeamManager teamManager;
+    private final RevealManager revealManager;
+    private final BackpackManager backpackManager;
 
     private boolean running = false;
     private boolean stopped = false;
+    private int currentItemStartedAtSeconds = 0;
 
-    private BossBar bossBar;
-
-    // ArmorStand Map
     private final HashMap<UUID, ArmorStand> headDisplays = new HashMap<>();
 
-    // Task für smooth follow
     private BukkitTask armorTask;
+    private BukkitTask actionTask;
+    private BukkitTask inventoryTask;
+    private BukkitTask statusTask;
 
     public GameManager(JavaPlugin plugin) {
         this.plugin = plugin;
 
         this.teamManager = new TeamManager(plugin);
-        this.skipManager = new SkipManager();
+        this.skipManager = new SkipManager(plugin);
         this.itemManager = new ItemManager(plugin);
         this.timer = new GameTimer(this);
+        this.revealManager = new RevealManager(plugin, this);
+        this.backpackManager = new BackpackManager();
     }
 
-    // =========================
-    // GAME CONTROL
-    // =========================
-
     public void startGame() {
+        stopTasksOnly();
+
         running = true;
         stopped = false;
 
-        bossBar = Bukkit.createBossBar(
-                "§eWarte auf Item...",
-                BarColor.YELLOW,
-                BarStyle.SOLID
-        );
+        revealManager.reset();
 
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            p.getInventory().clear();
-            bossBar.addPlayer(p);
-            skipManager.giveSkipItem(p);
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (teamManager.getTeam(player) == -1) {
+                teamManager.addToTeam(player, 1);
+            }
+
+            player.getInventory().clear();
+            skipManager.giveSkipItem(player);
         }
 
+        timer.start();
+        currentItemStartedAtSeconds = timer.getElapsedTime();
+
         itemManager.nextItem();
-        updateBossBar();
         updateArmorStands();
 
-        startArmorStandUpdater(); // 🔥 wichtig!
+        startArmorUpdater();
+        startActionBar();
+        startInventoryChecker();
 
-        timer.start();
+        Bukkit.broadcastMessage("§8[§eForceItem§8] §aSpiel gestartet!");
+    }
+
+    public void completeChallenge(Player player) {
+        if (itemManager.getCurrentItem() == null) {
+            return;
+        }
+
+        int team = teamManager.getTeam(player);
+        Material completedItem = itemManager.getCurrentItem();
+        int seconds = getCurrentItemSeconds();
+
+        boolean counted = teamManager.addResult(player, completedItem, seconds, false);
+        if (!counted) {
+            player.sendMessage("§8[§eForceItem§8] §cDu bist in keinem Team!");
+            return;
+        }
+
+        teamManager.sendTeamMessage(team, "§8[§eForceItem§8] " + teamManager.formatPlayerName(player)
+                + " §ahat §6" + formatMaterialName(completedItem) + " §ageschafft! §7("
+                + teamManager.formatDuration(seconds) + ")");
+        itemManager.nextItem();
+        currentItemStartedAtSeconds = timer.getElapsedTime();
+        updateArmorStands();
+    }
+
+    public void skipChallenge(Player player) {
+        if (itemManager.getCurrentItem() == null) {
+            return;
+        }
+
+        int team = teamManager.getTeam(player);
+        Material skippedItem = itemManager.getCurrentItem();
+        int seconds = getCurrentItemSeconds();
+
+        boolean counted = teamManager.addResult(player, skippedItem, seconds, true);
+        if (!counted) {
+            player.sendMessage("§8[§eForceItem§8] §cDu bist in keinem Team!");
+            return;
+        }
+
+        teamManager.sendTeamMessage(team, "§8[§eForceItem§8] " + teamManager.formatPlayerName(player)
+                + " §ehat §6" + formatMaterialName(skippedItem) + " §egeskippt! §7("
+                + teamManager.formatDuration(seconds) + ")");
+        itemManager.nextItem();
+        currentItemStartedAtSeconds = timer.getElapsedTime();
+        updateArmorStands();
+    }
+
+    public void checkPlayerInventory(Player player) {
+        if (!running || stopped || itemManager.getCurrentItem() == null) {
+            return;
+        }
+
+        for (ItemStack item : player.getInventory().getContents()) {
+            if (item == null) continue;
+
+            if (item.getType() == itemManager.getCurrentItem()) {
+                completeChallenge(player);
+                return;
+            }
+        }
+    }
+
+    private int getCurrentItemSeconds() {
+        return Math.max(0, timer.getElapsedTime() - currentItemStartedAtSeconds);
+    }
+
+    private String formatMaterialName(Material material) {
+        String name = material.name().toLowerCase().replace("_", " ");
+        return name.substring(0, 1).toUpperCase() + name.substring(1);
     }
 
     public void stopGame() {
         stopped = true;
+        running = false;
 
-        if (bossBar != null) {
-            bossBar.setTitle("§cTime: Stopped");
-            bossBar.setProgress(0);
-        }
-
-        if (armorTask != null) {
-            armorTask.cancel();
-            armorTask = null;
-        }
-
+        stopTasksOnly();
+        timer.stop();
         removeAllDisplays();
 
-        Bukkit.broadcastMessage("§8[§6Force Item Battle§8] §cSpiel gestoppt!");
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            player.getInventory().clear();
+        }
+
+        Bukkit.broadcastMessage("§8[§eForceItem§8] §cSpiel gestoppt!");
+        showStatusActionBar("§cSpiel gestoppt!");
+    }
+
+    public void finishByTime() {
+        if (!running || stopped) {
+            return;
+        }
+
+        stopped = true;
+        running = false;
+
+        stopTasksOnly();
+        timer.stop();
+        removeAllDisplays();
+
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            player.getInventory().clear();
+        }
+
+        Bukkit.broadcastMessage("§8[§eForceItem§8] §cZeit abgelaufen!");
+        showStatusActionBar("§cZeit abgelaufen!");
     }
 
     public void restartGame() {
@@ -95,64 +193,129 @@ public class GameManager {
         running = false;
         stopped = false;
 
-        removeBossBar();
         removeAllDisplays();
-
+        backpackManager.clearAll();
         teamManager.resetTeams();
+        revealManager.reset();
 
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            p.getInventory().clear();
-            teamManager.giveSelector(p);
+        plugin.getConfig().set("team-lock", false);
+        plugin.saveConfig();
+
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            player.getInventory().clear();
+
+            Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                teamManager.giveSelector(player);
+            }, 2L);
         }
 
-        Bukkit.broadcastMessage("§8[§6Force Item Battle§8] §eSpiel wurde zurückgesetzt!");
+        Bukkit.broadcastMessage("§8[§eForceItem§8] §eSpiel wurde zurückgesetzt!");
     }
 
-    // =========================
-    // BOSSBAR
-    // =========================
+    public void shutdown() {
+        running = false;
+        stopped = true;
 
-    public void updateBossBar() {
-        if (bossBar == null) return;
-        bossBar.setTitle("§6Item: §e" + itemManager.getNiceName());
+        stopTasksOnly();
+        timer.stop();
+        removeAllDisplays();
     }
 
-    private void removeBossBar() {
-        if (bossBar == null) return;
-
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            bossBar.removePlayer(p);
+    private void stopTasksOnly() {
+        if (armorTask != null) {
+            armorTask.cancel();
+            armorTask = null;
         }
 
-        bossBar.setVisible(false);
-        bossBar = null;
+        if (actionTask != null) {
+            actionTask.cancel();
+            actionTask = null;
+        }
+
+        if (inventoryTask != null) {
+            inventoryTask.cancel();
+            inventoryTask = null;
+        }
+
+        if (statusTask != null) {
+            statusTask.cancel();
+            statusTask = null;
+        }
     }
 
-    public BossBar getBossBar() {
-        return bossBar;
+    public void startActionBar() {
+        actionTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+
+            if (!running || stopped) return;
+
+            int time = timer.getRemainingTime();
+
+            int minutes = time / 60;
+            int seconds = time % 60;
+
+            String timeString = String.format("%02d:%02d", minutes, seconds);
+            String itemName = itemManager.getNiceName();
+
+            Component actionBar = LEGACY.deserialize("§d" + timeString + " §7- §6" + itemName);
+
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                player.sendActionBar(actionBar);
+            }
+
+        }, 0L, 20L);
     }
 
-    // =========================
-    // ARMOR STAND SYSTEM
-    // =========================
+    private void startInventoryChecker() {
+        inventoryTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (!running || stopped) return;
+
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                checkPlayerInventory(player);
+            }
+        }, 5L, 10L);
+    }
+
+    private void showStatusActionBar(String message) {
+        if (statusTask != null) {
+            statusTask.cancel();
+            statusTask = null;
+        }
+
+        Component actionBar = LEGACY.deserialize(message);
+
+        statusTask = new BukkitRunnable() {
+            private int ticks = 0;
+
+            @Override
+            public void run() {
+                for (Player player : Bukkit.getOnlinePlayers()) {
+                    player.sendActionBar(actionBar);
+                }
+
+                ticks++;
+                if (ticks >= 6) {
+                    statusTask = null;
+                    cancel();
+                }
+            }
+        }.runTaskTimer(plugin, 0L, 20L);
+    }
 
     public void updateArmorStands() {
-
         if (itemManager.getCurrentItem() == null) return;
 
-        for (Player p : Bukkit.getOnlinePlayers()) {
+        removeDisplaysForOfflinePlayers();
 
-            if (teamManager.getTeam(p).equals("-")) continue;
+        for (Player player : Bukkit.getOnlinePlayers()) {
 
-            ArmorStand stand = headDisplays.get(p.getUniqueId());
+            ArmorStand stand = headDisplays.get(player.getUniqueId());
 
-            Location loc = p.getLocation();
+            Location loc = player.getLocation();
             var forward = loc.getDirection().normalize().multiply(0.25);
             Location spawnLoc = loc.clone().add(forward).add(0, 2.0, 0);
 
             if (stand == null || stand.isDead()) {
-
-                stand = (ArmorStand) p.getWorld().spawnEntity(
+                stand = (ArmorStand) player.getWorld().spawnEntity(
                         spawnLoc,
                         EntityType.ARMOR_STAND
                 );
@@ -162,7 +325,7 @@ public class GameManager {
                 stand.setSmall(true);
                 stand.setMarker(false);
 
-                headDisplays.put(p.getUniqueId(), stand);
+                headDisplays.put(player.getUniqueId(), stand);
             }
 
             if (stand.getEquipment() != null) {
@@ -173,26 +336,24 @@ public class GameManager {
         }
     }
 
-    // 🔥 ULTRA SMOOTH FOLLOW
-    public void startArmorStandUpdater() {
-
+    public void startArmorUpdater() {
         armorTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
 
             if (!running || stopped) return;
 
-            for (Player p : Bukkit.getOnlinePlayers()) {
+            for (Player player : Bukkit.getOnlinePlayers()) {
 
-                ArmorStand stand = headDisplays.get(p.getUniqueId());
+                ArmorStand stand = headDisplays.get(player.getUniqueId());
 
                 if (stand == null || stand.isDead()) continue;
 
-                Location loc = p.getLocation();
+                Location loc = player.getLocation();
                 var forward = loc.getDirection().normalize().multiply(0.25);
 
                 stand.teleport(loc.add(forward).add(0, 2.0, 0));
             }
 
-        }, 0L, 1L); // 🔥 jede Tick (20 TPS)
+        }, 0L, 1L);
     }
 
     public void removeAllDisplays() {
@@ -201,16 +362,38 @@ public class GameManager {
                 stand.remove();
             }
         }
+
         headDisplays.clear();
+    }
+
+    public void removeDisplay(Player player) {
+        ArmorStand stand = headDisplays.remove(player.getUniqueId());
+
+        if (stand != null && !stand.isDead()) {
+            stand.remove();
+        }
+    }
+
+    private void removeDisplaysForOfflinePlayers() {
+        headDisplays.entrySet().removeIf(entry -> {
+            Player player = Bukkit.getPlayer(entry.getKey());
+            ArmorStand stand = entry.getValue();
+
+            if (player != null && player.isOnline()) {
+                return false;
+            }
+
+            if (stand != null && !stand.isDead()) {
+                stand.remove();
+            }
+
+            return true;
+        });
     }
 
     public ArmorStand getHeadDisplay(Player player) {
         return headDisplays.get(player.getUniqueId());
     }
-
-    // =========================
-    // GETTER
-    // =========================
 
     public boolean isRunning() {
         return running;
@@ -224,6 +407,10 @@ public class GameManager {
         return plugin;
     }
 
+    public GameTimer getTimer() {
+        return timer;
+    }
+
     public ItemManager getItemManager() {
         return itemManager;
     }
@@ -234,5 +421,13 @@ public class GameManager {
 
     public TeamManager getTeamManager() {
         return teamManager;
+    }
+
+    public RevealManager getRevealManager() {
+        return revealManager;
+    }
+
+    public BackpackManager getBackpackManager() {
+        return backpackManager;
     }
 }

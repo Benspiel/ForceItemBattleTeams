@@ -7,12 +7,17 @@ load: POSTWORLD
 
 commands:
   forceitembattle:
-    usage: /forceitembattle <start|stop|settings|lock|restart>
+    description: Hauptcommand für Force Item Battle Teams
+    usage: /forceitembattle <start|stop|settings|lock|restart|reveal|backpack>
+    aliases: [fib]
 
   backpack:
+    description: Öffnet den Team-Backpack
     usage: /backpack
+
 
 
 permissions:
   fib.start:
+    description: Erlaubt Admin-Commands für Force Item Battle Teams
     default: op
