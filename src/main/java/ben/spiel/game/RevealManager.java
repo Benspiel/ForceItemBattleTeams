@@ -1,5 +1,9 @@
 package ben.spiel.game;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.*;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
@@ -11,6 +15,10 @@ import org.bukkit.scheduler.BukkitRunnable;
 import java.util.*;
 
 public class RevealManager {
+
+    private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.legacySection();
+    private static final int MAX_ANIMATED_REVEALS = 3;
+    private static final int AUTO_CLOSE_DELAY_TICKS = 20;
 
     private final JavaPlugin plugin;
     private final GameManager gameManager;
@@ -36,8 +44,8 @@ public class RevealManager {
 
         List<Integer> ranking = gameManager.getTeamManager().getRanking();
 
-        if (revealIndex >= 3) {
-            sendLeaderboard(ranking);
+        if (revealIndex >= MAX_ANIMATED_REVEALS) {
+            sendRemainingTeams(ranking);
             return;
         }
 
@@ -56,7 +64,7 @@ public class RevealManager {
 
     private void showTeam(Player player, int team, int place) {
 
-        String title = "§8Reveal Platz " + place;
+        String title = "§8Team " + team + " - Platz " + place;
         Inventory inv = Bukkit.createInventory(null, 54, title);
 
         List<ChallengeResult> results = gameManager.getTeamManager().getResults(team);
@@ -86,26 +94,18 @@ public class RevealManager {
 
                 if (results.isEmpty()) {
                     if (!animationDone) {
-                        inv.setItem(22, createInfoItem(Material.BARRIER, "§cKeine Items", List.of("§7Noch keine Items angezeigt.")));
+                        inv.setItem(22, createInfoItem(Material.BARRIER, "§cKeine Items", List.of("§7Dieses Team hat noch keine Items geschafft.")));
                         playRevealSound(viewers, 0);
                         animationDone = true;
-                    }
-
-                    if (allViewersClosed(viewers, title)) {
-                        showWinTitle(team, place);
-                        revealRunning = false;
-                        cancel();
+                        finishRevealAfterDelay(viewers, title, team, place, this);
                     }
                     return;
                 }
 
                 if (index >= results.size() || index >= slots.size()) {
-                    animationDone = true;
-
-                    if (allViewersClosed(viewers, title)) {
-                        showWinTitle(team, place);
-                        revealRunning = false;
-                        cancel();
+                    if (!animationDone) {
+                        animationDone = true;
+                        finishRevealAfterDelay(viewers, title, team, place, this);
                     }
                     return;
                 }
@@ -154,7 +154,7 @@ public class RevealManager {
         meta.setLore(List.of(
                 "§7Status: " + (result.skipped() ? "§cSkip" : "§aGeschafft"),
                 "§7Zeit: §e" + gameManager.getTeamManager().formatDuration(result.seconds()),
-                "§7Spieler: §e" + result.playerName()
+                (result.skipped() ? "§7Geskippt von: §e" : "§7Erledigt von: §e") + result.playerName()
         ));
 
         item.setItemMeta(meta);
@@ -172,7 +172,16 @@ public class RevealManager {
         }
     }
 
-    private boolean allViewersClosed(Set<UUID> viewers, String title) {
+    private void finishRevealAfterDelay(Set<UUID> viewers, String title, int team, int place, BukkitRunnable revealTask) {
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            closeRevealInventories(viewers, title);
+            showWinTitle(team, place);
+            revealRunning = false;
+            revealTask.cancel();
+        }, AUTO_CLOSE_DELAY_TICKS);
+    }
+
+    private void closeRevealInventories(Set<UUID> viewers, String title) {
         viewers.removeIf(viewerId -> {
             Player viewer = Bukkit.getPlayer(viewerId);
             return viewer == null || !viewer.isOnline();
@@ -181,11 +190,9 @@ public class RevealManager {
         for (UUID viewerId : viewers) {
             Player viewer = Bukkit.getPlayer(viewerId);
             if (viewer != null && viewer.getOpenInventory().getTitle().equals(title)) {
-                return false;
+                viewer.closeInventory();
             }
         }
-
-        return true;
     }
 
     private ItemStack createInfoItem(Material material, String name, List<String> lore) {
@@ -221,19 +228,56 @@ public class RevealManager {
     }
 
     // =========================
-    // LEADERBOARD
+    // OVERVIEW / REMAINING TEAMS
     // =========================
 
-    private void sendLeaderboard(List<Integer> ranking) {
+    public void openOverview(Player player, int team) {
+        if (team < 1 || team > 8) {
+            player.sendMessage("§8[§eForceItem§8] §cDieses Team gibt es nicht.");
+            return;
+        }
 
-        Bukkit.broadcastMessage("§8[§eForceItem§8] §7Leaderboard:");
+        String title = "§8Team " + team + " Übersicht";
+        Inventory inv = Bukkit.createInventory(null, 54, title);
+        List<ChallengeResult> results = gameManager.getTeamManager().getResults(team);
+        List<Integer> slots = revealSlots();
 
-        for (int i = 0; i < ranking.size(); i++) {
+        fillFrame(inv);
+
+        if (results.isEmpty()) {
+            inv.setItem(22, createInfoItem(Material.BARRIER, "§cKeine Items", List.of("§7Dieses Team hat noch keine Items geschafft.")));
+        } else {
+            for (int i = 0; i < results.size() && i < slots.size(); i++) {
+                inv.setItem(slots.get(i), createResultItem(results.get(i), i + 1));
+            }
+
+            if (results.size() > slots.size()) {
+                inv.setItem(49, createInfoItem(Material.PAPER, "§eWeitere Items", List.of(
+                        "§7Angezeigt: §e" + slots.size() + "§7/§e" + results.size(),
+                        "§7Die Übersicht ist auf eine Inventarseite begrenzt."
+                )));
+            }
+        }
+
+        player.openInventory(inv);
+    }
+
+    private void sendRemainingTeams(List<Integer> ranking) {
+
+        Bukkit.broadcastMessage("§8[§eForceItem§8] §7Restliche Teams:");
+
+        for (int i = MAX_ANIMATED_REVEALS; i < ranking.size(); i++) {
             int team = ranking.get(i);
-            Bukkit.broadcastMessage("§e" + (i + 1) + ". §7"
-                    + gameManager.getTeamManager().getTeamTag(team)
-                    + " §7Team " + team
-                    + " §8- §a" + gameManager.getTeamManager().getScore(team) + " Items");
+            Component line = LEGACY.deserialize("§e" + (i + 1) + ". §7"
+                            + gameManager.getTeamManager().getTeamTag(team)
+                            + " §7Team " + team
+                            + " §8- §a" + gameManager.getTeamManager().getScore(team) + " Items §8{")
+                    .append(LEGACY.deserialize("§bÜbersicht")
+                            .clickEvent(ClickEvent.runCommand("/fib overview " + team))
+                            .hoverEvent(HoverEvent.showText(LEGACY.deserialize("§7Klicke, um die Items von §eTeam " + team + " §7ohne Animation anzuschauen."))))
+                    .append(LEGACY.deserialize("§8}"));
+
+            Bukkit.getServer().sendMessage(line);
         }
     }
 
