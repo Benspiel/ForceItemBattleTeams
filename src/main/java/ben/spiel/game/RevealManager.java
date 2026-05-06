@@ -18,7 +18,9 @@ public class RevealManager {
 
     private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.legacySection();
     private static final int MAX_ANIMATED_REVEALS = 3;
-    private static final int AUTO_CLOSE_DELAY_TICKS = 20;
+    private static final int AUTO_CLOSE_DELAY_TICKS = 40;
+    private static final int REVEAL_START_DELAY_TICKS = 20;
+    private static final int REVEAL_STEP_TICKS = 10;
 
     private final JavaPlugin plugin;
     private final GameManager gameManager;
@@ -64,7 +66,7 @@ public class RevealManager {
 
     private void showTeam(Player player, int team, int place) {
 
-        String title = "§8Team " + team + " - Platz " + place;
+        String title = "§8Reveal Platz " + place;
         Inventory inv = Bukkit.createInventory(null, 54, title);
 
         List<ChallengeResult> results = gameManager.getTeamManager().getResults(team);
@@ -94,7 +96,7 @@ public class RevealManager {
 
                 if (results.isEmpty()) {
                     if (!animationDone) {
-                        inv.setItem(22, createInfoItem(Material.BARRIER, "§cKeine Items", List.of("§7Dieses Team hat noch keine Items geschafft.")));
+                        inv.setItem(22, createInfoItem(Material.BARRIER, "§cKeine Items", List.of("§7Hier wurden noch keine Items angezeigt.")));
                         playRevealSound(viewers, 0);
                         animationDone = true;
                         finishRevealAfterDelay(viewers, title, team, place, this);
@@ -111,14 +113,14 @@ public class RevealManager {
                 }
 
                 int slot = slots.get(index);
-                inv.setItem(slot, createResultItem(results.get(index), index + 1));
+                inv.setItem(slot, createResultItem(results.get(index), index + 1, false));
 
                 playRevealSound(viewers, index);
 
                 index++;
             }
 
-        }.runTaskTimer(plugin, 0L, 6L);
+        }.runTaskTimer(plugin, REVEAL_START_DELAY_TICKS, REVEAL_STEP_TICKS);
     }
 
     private void fillFrame(Inventory inv) {
@@ -145,17 +147,22 @@ public class RevealManager {
         );
     }
 
-    private ItemStack createResultItem(ChallengeResult result, int number) {
+    private ItemStack createResultItem(ChallengeResult result, int number, boolean showPlayerName) {
         ItemStack item = new ItemStack(result.material());
         ItemMeta meta = item.getItemMeta();
 
         String itemName = formatMaterialName(result.material());
         meta.setDisplayName((result.skipped() ? "§cSkip" : "§a#" + number) + " §7- §6" + itemName);
-        meta.setLore(List.of(
-                "§7Status: " + (result.skipped() ? "§cSkip" : "§aGeschafft"),
-                "§7Zeit: §e" + gameManager.getTeamManager().formatDuration(result.seconds()),
-                (result.skipped() ? "§7Geskippt von: §e" : "§7Erledigt von: §e") + result.playerName()
-        ));
+
+        List<String> lore = new ArrayList<>();
+        lore.add("§7Status: " + (result.skipped() ? "§cSkip" : "§aGeschafft"));
+        lore.add("§7Zeit: §e" + gameManager.getTeamManager().formatDuration(result.seconds()));
+
+        if (showPlayerName) {
+            lore.add((result.skipped() ? "§7Geskippt von: §e" : "§7Erledigt von: §e") + result.playerName());
+        }
+
+        meta.setLore(lore);
 
         item.setItemMeta(meta);
         return item;
@@ -248,7 +255,7 @@ public class RevealManager {
             inv.setItem(22, createInfoItem(Material.BARRIER, "§cKeine Items", List.of("§7Dieses Team hat noch keine Items geschafft.")));
         } else {
             for (int i = 0; i < results.size() && i < slots.size(); i++) {
-                inv.setItem(slots.get(i), createResultItem(results.get(i), i + 1));
+                inv.setItem(slots.get(i), createResultItem(results.get(i), i + 1, true));
             }
 
             if (results.size() > slots.size()) {
@@ -264,20 +271,32 @@ public class RevealManager {
 
     private void sendRemainingTeams(List<Integer> ranking) {
 
-        Bukkit.broadcastMessage("§8[§eForceItem§8] §7Restliche Teams:");
+        clearChat();
+        Bukkit.broadcastMessage("§8[§eForceItem§8] §7Alle Teams:");
+        Bukkit.broadcastMessage("");
 
-        for (int i = MAX_ANIMATED_REVEALS; i < ranking.size(); i++) {
+        for (int i = 0; i < ranking.size(); i++) {
             int team = ranking.get(i);
             Component line = LEGACY.deserialize("§e" + (i + 1) + ". §7"
                             + gameManager.getTeamManager().getTeamTag(team)
                             + " §7Team " + team
-                            + " §8- §a" + gameManager.getTeamManager().getScore(team) + " Items §8{")
+                            + " §8- §a" + gameManager.getTeamManager().getScore(team) + " Items §8[")
                     .append(LEGACY.deserialize("§bÜbersicht")
                             .clickEvent(ClickEvent.runCommand("/fib overview " + team))
                             .hoverEvent(HoverEvent.showText(LEGACY.deserialize("§7Klicke, um die Items von §eTeam " + team + " §7ohne Animation anzuschauen."))))
-                    .append(LEGACY.deserialize("§8}"));
+                    .append(LEGACY.deserialize("§8]"));
 
             Bukkit.getServer().sendMessage(line);
+
+            if (i == 2) {
+                Bukkit.broadcastMessage("");
+            }
+        }
+    }
+
+    private void clearChat() {
+        for (int i = 0; i < 80; i++) {
+            Bukkit.broadcastMessage("");
         }
     }
 

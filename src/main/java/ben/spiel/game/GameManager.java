@@ -152,6 +152,14 @@ public class GameManager {
     }
 
     public void stopGame() {
+        stopGame(true);
+    }
+
+    private void stopGame(boolean announce) {
+        if (!running && stopped) {
+            return;
+        }
+
         stopped = true;
         running = false;
 
@@ -163,8 +171,10 @@ public class GameManager {
             player.getInventory().clear();
         }
 
-        Bukkit.broadcastMessage("§8[§eForceItem§8] §cSpiel gestoppt!");
-        showStatusActionBar("§cSpiel gestoppt!");
+        if (announce) {
+            Bukkit.broadcastMessage("§8[§eForceItem§8] §cSpiel gestoppt!");
+            showStatusActionBar("§cSpiel gestoppt!");
+        }
     }
 
     public void finishByTime() {
@@ -188,7 +198,7 @@ public class GameManager {
     }
 
     public void restartGame() {
-        stopGame();
+        stopGame(false);
 
         running = false;
         stopped = false;

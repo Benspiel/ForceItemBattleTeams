@@ -53,17 +53,14 @@ public class FIBCommand implements CommandExecutor, TabCompleter {
         switch (subCommand) {
             case "start":
                 gameManager.startGame();
-                sender.sendMessage(PREFIX + "§aSpiel gestartet!");
                 break;
 
             case "stop":
                 gameManager.stopGame();
-                sender.sendMessage(PREFIX + "§cSpiel gestoppt!");
                 break;
 
             case "restart":
                 gameManager.restartGame();
-                sender.sendMessage(PREFIX + "§eSpiel neu gestartet!");
                 break;
 
             case "settings":

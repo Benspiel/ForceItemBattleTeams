@@ -27,7 +27,6 @@ public class CommandStart implements CommandExecutor {
         }
 
         gameManager.startGame();
-        sender.sendMessage("§aSpiel gestartet!");
         return true;
     }
 }

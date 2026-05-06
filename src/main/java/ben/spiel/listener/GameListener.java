@@ -11,6 +11,7 @@ import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
@@ -61,12 +62,6 @@ public class GameListener implements Listener {
 
         if (event.getItem().getType() == Material.COMMAND_BLOCK_MINECART) {
             event.setCancelled(true);
-
-            if (plugin.getConfig().getBoolean("team-lock", false)) {
-                player.sendMessage(PREFIX + "§cTeam-Wechsel sind gesperrt!");
-                return;
-            }
-
             openTeamMenu(player);
         }
     }
@@ -104,6 +99,7 @@ public class GameListener implements Listener {
     private void openTeamMenu(Player player) {
 
         Inventory inv = Bukkit.createInventory(null, 9, "§8Teams");
+        boolean teamLock = plugin.getConfig().getBoolean("team-lock", false);
 
         for (int i = 1; i <= 8; i++) {
 
@@ -113,6 +109,15 @@ public class GameListener implements Listener {
             meta.setDisplayName(gameManager.getTeamManager().getTeamTag(i) + " §eTeam " + i);
 
             List<String> lore = new ArrayList<>();
+            if (teamLock) {
+                lore.add("§cTeam-Lock aktiv");
+                lore.add("§7Du kannst die Teams anschauen, aber nicht wechseln.");
+                lore.add("");
+            } else {
+                lore.add("§aKlicken zum Wechseln");
+                lore.add("");
+            }
+
             List<String> players = plugin.getConfig().getStringList("teams.team" + i);
 
             for (String uuid : players) {
@@ -160,6 +165,30 @@ public class GameListener implements Listener {
         gameManager.getTeamManager().addToTeam(player, team);
 
         player.closeInventory();
+    }
+
+    @EventHandler
+    public void onProtectedMenuClick(InventoryClickEvent event) {
+        if (!isProtectedReadOnlyMenu(event.getView().getTitle())) return;
+
+        event.setCancelled(true);
+    }
+
+    @EventHandler
+    public void onProtectedMenuDrag(InventoryDragEvent event) {
+        if (!isProtectedReadOnlyMenu(event.getView().getTitle())) return;
+
+        int topSize = event.getView().getTopInventory().getSize();
+        for (int slot : event.getRawSlots()) {
+            if (slot < topSize) {
+                event.setCancelled(true);
+                return;
+            }
+        }
+    }
+
+    private boolean isProtectedReadOnlyMenu(String title) {
+        return title.startsWith("§8Reveal Platz ") || title.contains("§8Team ") && title.contains(" Übersicht");
     }
 
     @EventHandler
