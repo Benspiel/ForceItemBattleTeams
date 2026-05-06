@@ -20,6 +20,7 @@ public class FIBCommand implements CommandExecutor, TabCompleter {
             "restart",
             "settings",
             "reveal",
+            "overview",
             "lock",
             "backpack"
     );
@@ -38,7 +39,7 @@ public class FIBCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 0) {
-            sender.sendMessage(PREFIX + "Nutze: /" + label + " <start|stop|restart|settings|reveal|lock|backpack>");
+            sender.sendMessage(PREFIX + "Nutze: /" + label + " <start|stop|restart|settings|reveal|overview|lock|backpack>");
             return true;
         }
 
@@ -83,6 +84,9 @@ public class FIBCommand implements CommandExecutor, TabCompleter {
                 gameManager.getRevealManager().revealNext(player);
                 break;
 
+            case "overview":
+                return openRevealOverview(sender, args);
+
             case "lock":
                 toggleTeamLock(sender);
                 break;
@@ -104,20 +108,31 @@ public class FIBCommand implements CommandExecutor, TabCompleter {
             return List.of();
         }
 
-        if (args.length != 1) {
-            return List.of();
-        }
+        if (args.length == 1) {
+            String typed = args[0].toLowerCase();
+            List<String> matches = new ArrayList<>();
 
-        String typed = args[0].toLowerCase();
-        List<String> matches = new ArrayList<>();
-
-        for (String subCommand : SUBCOMMANDS) {
-            if (subCommand.startsWith(typed)) {
-                matches.add(subCommand);
+            for (String subCommand : SUBCOMMANDS) {
+                if (subCommand.startsWith(typed)) {
+                    matches.add(subCommand);
+                }
             }
+
+            return matches;
         }
 
-        return matches;
+        if (args.length == 2 && args[0].equalsIgnoreCase("overview")) {
+            List<String> teams = new ArrayList<>();
+            for (int i = 1; i <= 8; i++) {
+                String team = String.valueOf(i);
+                if (team.startsWith(args[1])) {
+                    teams.add(team);
+                }
+            }
+            return teams;
+        }
+
+        return List.of();
     }
 
     private boolean openBackpack(CommandSender sender) {
@@ -143,7 +158,30 @@ public class FIBCommand implements CommandExecutor, TabCompleter {
     }
 
     private boolean requiresAdminPermission(String subCommand) {
-        return !subCommand.equals("backpack");
+        return !subCommand.equals("backpack") && !subCommand.equals("overview");
+    }
+
+    private boolean openRevealOverview(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(PREFIX + "§cDie Übersicht kann nur ein Spieler öffnen.");
+            return true;
+        }
+
+        if (args.length < 2) {
+            player.sendMessage(PREFIX + "§cNutze: /fib overview <Team 1-8>");
+            return true;
+        }
+
+        int team;
+        try {
+            team = Integer.parseInt(args[1]);
+        } catch (NumberFormatException ignored) {
+            player.sendMessage(PREFIX + "§cBitte gib eine Teamnummer von 1 bis 8 an.");
+            return true;
+        }
+
+        gameManager.getRevealManager().openOverview(player, team);
+        return true;
     }
 
     private void toggleTeamLock(CommandSender sender) {
