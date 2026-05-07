@@ -9,9 +9,11 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
@@ -87,7 +89,8 @@ public class GameListener implements Listener {
         if (!(event.getEntity() instanceof Player player)) return;
 
         ItemStack pickedUp = event.getItem().getItemStack();
-        if (pickedUp.getType() == gameManager.getItemManager().getCurrentItem()) {
+        Material currentItem = gameManager.getCurrentItem(player);
+        if (currentItem != null && pickedUp.getType() == currentItem) {
             Bukkit.getScheduler().runTask(plugin, () -> checkInventory(player));
         }
     }
@@ -163,6 +166,11 @@ public class GameListener implements Listener {
         int team = slot + 1;
 
         gameManager.getTeamManager().addToTeam(player, team);
+
+        if (gameManager.isRunning() && !gameManager.isStopped()) {
+            gameManager.getSkipManager().giveSkipItem(player);
+            gameManager.updateArmorStands();
+        }
 
         player.closeInventory();
     }
@@ -283,9 +291,11 @@ public class GameListener implements Listener {
                 gameManager.getTeamManager().addToTeam(event.getPlayer(), 1);
             }
 
+            gameManager.getTeamManager().updatePlayerName(event.getPlayer());
             gameManager.getSkipManager().giveSkipItem(event.getPlayer());
             gameManager.updateArmorStands();
         } else {
+            gameManager.getTeamManager().updatePlayerName(event.getPlayer());
             gameManager.getTeamManager().giveSelector(event.getPlayer());
         }
     }
@@ -297,8 +307,28 @@ public class GameListener implements Listener {
 
     @EventHandler
     public void onBreak(BlockBreakEvent event) {
-        if (gameManager.isStopped()) {
+        if (!isGameActive()) {
             event.setCancelled(true);
         }
+    }
+
+    @EventHandler
+    public void onDrop(PlayerDropItemEvent event) {
+        Material droppedType = event.getItemDrop().getItemStack().getType();
+
+        if (droppedType == Material.COMMAND_BLOCK_MINECART || !isGameActive()) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler
+    public void onEntityDamageByEntity(EntityDamageByEntityEvent event) {
+        if (!isGameActive()) {
+            event.setCancelled(true);
+        }
+    }
+
+    private boolean isGameActive() {
+        return gameManager.isRunning() && !gameManager.isStopped();
     }
 }

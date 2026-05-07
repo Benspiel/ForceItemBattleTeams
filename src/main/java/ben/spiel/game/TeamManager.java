@@ -6,6 +6,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scoreboard.Scoreboard;
+import org.bukkit.scoreboard.Team;
 
 import java.util.*;
 
@@ -41,6 +43,7 @@ public class TeamManager {
 
         playerTeams.put(p.getUniqueId(), team);
         savePlayerTeam(p.getUniqueId(), team);
+        updatePlayerName(p);
         p.sendMessage("§8[§eForceItem§8] §7Du bist jetzt in " + getTeamTag(team) + " §7Team " + team + "§7.");
         return true;
     }
@@ -111,6 +114,58 @@ public class TeamManager {
         }
 
         plugin.saveConfig();
+        updateAllPlayerNames();
+    }
+
+    public void updateAllPlayerNames() {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            updatePlayerName(player);
+        }
+    }
+
+    public void updatePlayerName(Player player) {
+        int team = getTeam(player);
+        String rawName = player.getName();
+
+        removeFromAllScoreboardTeams(player);
+
+        if (team == -1) {
+            player.setDisplayName(rawName);
+            player.setPlayerListName(rawName);
+            return;
+        }
+
+        Team scoreboardTeam = getOrCreateScoreboardTeam(team);
+        scoreboardTeam.addEntry(rawName);
+
+        String formattedName = getTeamTag(team) + " " + rawName;
+        player.setDisplayName(formattedName);
+        player.setPlayerListName(formattedName);
+    }
+
+    private Team getOrCreateScoreboardTeam(int team) {
+        Scoreboard scoreboard = Bukkit.getScoreboardManager().getMainScoreboard();
+        String teamName = "fib_team_" + team;
+        Team scoreboardTeam = scoreboard.getTeam(teamName);
+
+        if (scoreboardTeam == null) {
+            scoreboardTeam = scoreboard.registerNewTeam(teamName);
+        }
+
+        scoreboardTeam.setPrefix(getTeamTag(team) + " ");
+        scoreboardTeam.setSuffix("");
+        return scoreboardTeam;
+    }
+
+    private void removeFromAllScoreboardTeams(Player player) {
+        Scoreboard scoreboard = Bukkit.getScoreboardManager().getMainScoreboard();
+        String entry = player.getName();
+
+        for (Team team : scoreboard.getTeams()) {
+            if (team.hasEntry(entry)) {
+                team.removeEntry(entry);
+            }
+        }
     }
 
     // =========================
